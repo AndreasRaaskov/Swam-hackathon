@@ -1,0 +1,41 @@
+# Usage (from this folder):
+#   docker compose build            # builds the single shared image once (only the `test` service builds)
+#   docker compose run --rm test
+#   docker compose run --rm validate
+#   docker compose run --rm smoke
+#   RUN_NAME=main docker compose run --rm run && RUN_NAME=main docker compose run --rm judge && RUN_NAME=main docker compose run --rm analyze
+# Extra CLI flags: docker compose run --rm run run --run-name main --conditions core,ablation
+# Lower `concurrency` in config/experiment.yaml if the Docker VM is short on resources.
+x-common: &common
+  image: jourapist:latest
+  pull_policy: never              # local image only; build it with `docker compose build`
+  env_file:
+    - path: .env
+      required: false
+  user: "${UID:-1000}:${GID:-1000}"
+  volumes:
+    - ./data:/data:ro
+    - ./outputs:/outputs
+    - ./config:/config
+
+services:
+  validate:
+    <<: *common
+    command: ["validate-data"]
+  smoke:
+    <<: *common
+    command: ["smoke", "--conditions", "core"]
+  run:
+    <<: *common
+    command: ["run", "--run-name", "${RUN_NAME:-main}", "--conditions", "core"]
+  judge:
+    <<: *common
+    command: ["judge", "--run-name", "${RUN_NAME:-main}"]
+  analyze:
+    <<: *common
+    command: ["analyze", "--run-name", "${RUN_NAME:-main}"]
+  test:
+    <<: *common
+    build: .                      # the one service that builds jourapist:latest
+    entrypoint: ["python", "-m", "pytest", "-q", "-p", "no:cacheprovider", "/app/tests"]
+    command: []

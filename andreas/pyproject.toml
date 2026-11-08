@@ -1,0 +1,37 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jourapist"
+version = "0.1.0"
+description = "Auditor vs therapist interviews of forked multi-agent snapshots (Swarm Alignment Hackathon)"
+requires-python = ">=3.11"
+dependencies = [
+  "adaption==0.19.0",
+  "openai==3.46.0",
+  "anthropic==2.6.0",
+  "pydantic==2.14.3",
+  "pyyaml==6.0.3",
+  "python-dotenv>=1.0",
+  "pandas==3.1.1",
+  "numpy>=2.0",
+  "scipy==1.18.1",
+  "scikit-learn==1.9.1",
+  "matplotlib==3.11.2",
+  "tabulate>=0.9",
+  "mcp==2.3.0",
+  "uvicorn==0.54.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+jourapist = "jourapist.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["jourapist*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
