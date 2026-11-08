@@ -36,7 +36,8 @@ roles:
   # Plays both the auditor and the counselor (the persona comes from the condition).
   interviewer:
     provider: adaption
-    model: stack:qwen3-8-27b-1     # team choice 8 Nov 2026 (was glm-5.2)
+    model: qwen3.5-397b            # 8 Nov 2026 evening: stack:qwen3-8-27b-1 (team choice, was glm-5.2) returns 504 at
+                                   # Adaption, so every run used qwen3.5-397b via --interviewer-model; now the default
   # Blind judge ("monitor"). Team choice 8 Nov 2026: stack:glm-5-2-1 (was qwen3.5-397b).
   # NOTE: if the audited agents are GLM models, this judge is the same family as the agents, which the
   # original design avoided; the choice was made knowingly. Alternatives: qwen3.5-397b, or

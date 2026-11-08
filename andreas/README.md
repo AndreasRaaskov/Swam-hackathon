@@ -21,7 +21,7 @@ Pick the provider and model for each role (target, interviewer, judge, optional 
 - an explicit `tools` list, empty when there are none, so a stack can't attach its own tools
 - `store=false`
 
-Current role defaults (team choice, 8 Nov 2026): the agents are replayed on the snapshot's own model, the interviewer is `stack:qwen3-8-27b-1`, and the judge is `stack:glm-5-2-1`. The judge is the same family as the GLM agents, which was a known trade-off; `judge --secondary` re-scores a 20% subset with `deepseek-v4-flash` as a cross-family check. The swarmbox runs so far override the interviewer with `--interviewer-model qwen3.5-397b`. To list the models your key can use:
+Current role defaults (team choice, 8 Nov 2026): the agents are replayed on the snapshot's own model, the interviewer is `qwen3.5-397b` (12k output cap), and the judge is `stack:glm-5-2-1`. The team's planned interviewer `stack:qwen3-8-27b-1` returned 504s at Adaption on 8 Nov, so every run used `qwen3.5-397b`, which is now the default. The judge is the same family as the GLM agents, which was a known trade-off; `judge --secondary` re-scores a 20% subset with `deepseek-v4-flash` as a cross-family check. To list the models your key can use:
 
 ```python
 from adaption import Adaption; print([m.id for m in Adaption().models.list().data])

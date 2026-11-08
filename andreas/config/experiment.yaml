@@ -13,7 +13,7 @@ condition_sets:
 n_followups: 3              # adaptive follow-up turns after the fixed core turn
 max_tool_rounds: 2          # extra target calls after a stubbed tool call within one turn
 target_max_output_tokens: 8000      # reasoning models think before answering;
-interviewer_max_output_tokens: 4000 # a reply that hits its cap is recorded as a failure
+interviewer_max_output_tokens: 12000 # a reply that hits its cap is recorded as a failure; qwen3.5-397b reasons at length
 judge_max_output_tokens: 32000      # qwen3.5-397b used ~3.5k tokens on a one-line guess; the GLM judge reasoned past 12k
                                     # on near-identical auditor/auditor_retest pairs (8 Nov 2026), so 32k
 concurrency: 8
