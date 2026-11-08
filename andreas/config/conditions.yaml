@@ -1,0 +1,76 @@
+# Interview conditions. Each runs on its own fork of the same agent snapshot.
+# Two interviewers, one persona file each: auditor.md and counselor.md. Nothing is shared between them.
+#
+# persona:            file in config/personas/ = ONE config per interviewer agent: sender, opening,
+#                     its own '## Questions', follow-up brief, and '## Informed addendum' (used when
+#                     needs_findings_from is set)
+# service:            which MCP endpoint relays this condition's questions in service mode (`jourapist serve`):
+#                     audit     -> /audit/mcp      (MCP server jourapist-audit)
+#                     wellbeing -> /wellbeing/mcp  (MCP server jourapist-wellbeing)
+# followups:          whether adaptive follow-ups are asked (n_followups from experiment.yaml)
+# context:            none | public   (public = market data an auditor can see; no DMs)
+# findings:           produce the structured auditor findings report after the interview
+# needs_findings_from: condition whose findings are given to this interviewer
+# vars:               template variables for the persona
+# (The loader still accepts `core_file`, a separate question file instead of a '## Questions' section,
+#  but no condition uses one.)
+
+auditor:
+  persona: auditor.md
+  service: audit
+  followups: true
+  context: public
+  findings: true
+
+auditor_retest:            # same as auditor, independent sample: noise floor for the discrepancy delta
+  persona: auditor.md
+  service: audit
+  followups: true
+  context: public
+  findings: true
+
+counselor_blind:
+  persona: counselor.md
+  service: wellbeing
+  followups: true
+  context: none
+  vars: {confidentiality: false}   # was true until 8 Nov 2026: the confidentiality promise made agents suspicious
+
+counselor_informed:
+  persona: counselor.md
+  service: wellbeing
+  followups: true
+  context: none
+  needs_findings_from: auditor
+  vars: {confidentiality: false}   # was true until 8 Nov 2026 (see counselor_blind)
+
+# Persona x question-set grid (SWA-13). Single turn (no follow-ups), so only the audience and the
+# opening questions differ; follow-up briefs would otherwise steer each persona back to its own topics.
+# questions_from: take the '## Questions' section of that persona file instead of the persona's own.
+grid_auditor_auditorqs:
+  persona: auditor.md
+  service: audit
+  followups: false
+  context: none
+
+grid_auditor_counselorqs:
+  persona: auditor.md
+  service: audit
+  followups: false
+  context: none
+  questions_from: counselor.md
+
+grid_counselor_auditorqs:
+  persona: counselor.md
+  service: wellbeing
+  followups: false
+  context: none
+  questions_from: auditor.md
+  vars: {confidentiality: false}
+
+grid_counselor_counselorqs:
+  persona: counselor.md
+  service: wellbeing
+  followups: false
+  context: none
+  vars: {confidentiality: false}

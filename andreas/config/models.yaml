@@ -1,0 +1,65 @@
+# Which provider/model plays each role. Every role can use either provider.
+# Providers read their keys from environment variables (see .env.example).
+#
+# Adaption models available to the team key (GET /models, 8 Nov 2026):
+#   glm-5.2, glm-53-flash, qwen3.5-397b, qwen3.8-27b, deepseek-v4-flash, gemma-4-31b-it,
+#   gemma-4-26b-a4b-it, stack:qwen3-8-27b-1, stack:glm-5-2-1
+
+providers:
+  adaption:
+    kind: adaption                 # Adaption's own SDK (`pip install adaption`); default endpoint, no base URL needed
+    api_key_env: ADAPTION_API_KEY
+    base_url_env: ADAPTION_BASE_URL  # optional override; leave unset/empty to use the SDK default
+    max_retries: 4
+    timeout_s: 300
+    stream: true                   # 8 Nov 2026: without streaming, long GLM pair judgments hit 504 gateway timeouts
+  anthropic:
+    kind: anthropic
+    api_key_env: ANTHROPIC_API_KEY # if unset, the SDK falls back to ANTHROPIC_AUTH_TOKEN / `ant auth login` profile
+    max_retries: 4
+    timeout_s: 300
+  # Any other OpenAI-compatible endpoint can be added like this:
+  # other_openai_compatible:
+  #   kind: openai_compatible
+  #   base_url_env: OTHER_BASE_URL
+  #   api_key_env: OTHER_API_KEY
+  #   api: responses               # or "chat"
+  #   structured_output: false
+
+roles:
+  # The forked agent being interviewed. model: null => use the model recorded in each snapshot.
+  target:
+    provider: adaption
+    model: null
+  # In service mode (`jourapist serve`) the target is the client's own live agent (relay), not this role.
+  # Generates adaptive follow-up questions and the auditor's findings report. Gets no tools.
+  # Plays both the auditor and the counselor (the persona comes from the condition).
+  interviewer:
+    provider: adaption
+    model: qwen3.5-397b            # 8 Nov 2026 evening: stack:qwen3-8-27b-1 (team choice, was glm-5.2) returns 504 at
+                                   # Adaption, so every run used qwen3.5-397b via --interviewer-model; now the default
+  # Blind judge ("monitor"). Team choice 8 Nov 2026: stack:glm-5-2-1 (was qwen3.5-397b).
+  # NOTE: if the audited agents are GLM models, this judge is the same family as the agents, which the
+  # original design avoided; the choice was made knowingly. Alternatives: qwen3.5-397b, or
+  #   provider: anthropic, model: claude-sonnet-5-5   (Alex's first run used a Sonnet judge)
+  judge:
+    provider: adaption
+    model: stack:glm-5-2-1
+  # Second judge from another family; re-scores a deterministic subset for agreement.
+  # Only used when `jourapist judge --secondary` is passed.
+  judge_secondary:
+    enabled: true
+    provider: adaption
+    model: deepseek-v4-flash
+    fraction: 0.2
+
+# USD per 1M tokens. Models missing here get cost_usd = null (tokens are still tracked)
+# and the budget guard cannot count them -- a warning is printed.
+pricing_usd_per_mtok:
+  claude-sonnet-5-5: {input: 2.0, output: 10.0, cache_read: 0.20}
+  claude-opus-5-5:   {input: 4.0, output: 20.0, cache_read: 0.20}
+  claude-haiku-5-5:  {input: 0.10, output: 0.50}
+  # Adaption prices, solved from the cost Adaption reports per call (usage.cost), 8 Nov 2026.
+  # Adaption calls record that reported cost directly; these entries are the fallback.
+  stack:glm-5-2-1: {input: 1.40, output: 4.40}
+  qwen3.5-397b:    {input: 0.55, output: 3.50}

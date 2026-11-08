@@ -1,0 +1,482 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transcript Viewer</title>
+<style>
+:root {
+  --bg: #f6f6f4; --panel: #ffffff; --panel2: #f0efec; --border: #dddbd5;
+  --text: #1d1d1b; --muted: #6b6a66; --accent: #2f6fdb;
+  --int-bg: #eef3fb; --int-border: #c9d8f2;
+  --agent-bg: #ffffff; --reason-bg: #f7f4ea; --reason-border: #e6dfc6;
+  --tool-bg: #eef7f0; --tool-border: #c6e2cc;
+  --warn: #b25c00; --warn-bg: #fff3e0; --bad: #b3261e; --bad-bg: #fdecea; --good: #1e7a3c; --good-bg: #e7f5ec;
+  --mark: #ffe58a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161615; --panel: #1f1f1d; --panel2: #262624; --border: #3a3936;
+    --text: #e8e6e1; --muted: #9a988f; --accent: #7aa7ff;
+    --int-bg: #1d2633; --int-border: #33445e;
+    --agent-bg: #1f1f1d; --reason-bg: #29261c; --reason-border: #4a432c;
+    --tool-bg: #1b2a20; --tool-border: #2f4c37;
+    --warn: #ffb35c; --warn-bg: #3a2a14; --bad: #ff8a80; --bad-bg: #3b1d1b; --good: #7fd69b; --good-bg: #17301f;
+    --mark: #6b5a12;
+  }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+button, select, input { font: inherit; color: inherit; }
+.app { display: grid; grid-template-columns: 340px 1fr; height: 100vh; }
+.side { border-right: 1px solid var(--border); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+.side-top { padding: 12px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.btn { border: 1px solid var(--border); background: var(--panel2); padding: 5px 10px; border-radius: 6px; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+input[type=search], select { width: 100%; border: 1px solid var(--border); background: var(--bg); padding: 6px 8px; border-radius: 6px; }
+.list { overflow-y: auto; flex: 1; min-height: 0; }
+.item { padding: 9px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.item:hover { background: var(--panel2); }
+.item.sel { background: var(--int-bg); box-shadow: inset 3px 0 0 var(--accent); }
+.item .t { font-weight: 600; }
+.item .s { color: var(--muted); font-size: 12px; word-break: break-all; }
+.status { padding: 8px 12px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--border); }
+.main { overflow-y: auto; min-height: 0; }
+.wrap { max-width: 1000px; margin: 0 auto; padding: 20px 24px 80px; }
+.empty { color: var(--muted); padding: 60px 20px; text-align: center; }
+.drop { border: 2px dashed var(--border); border-radius: 12px; padding: 40px; margin-top: 20px; }
+body.dragging .drop { border-color: var(--accent); }
+h1 { font-size: 18px; margin: 0 0 4px; word-break: break-all; }
+h2 { font-size: 15px; margin: 0; }
+.meta { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 4px 16px; margin: 10px 0 14px; font-size: 13px; }
+.meta div span { color: var(--muted); }
+.badge { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--border); background: var(--panel2); color: var(--muted); white-space: nowrap; }
+.badge.warn { background: var(--warn-bg); color: var(--warn); border-color: transparent; }
+.badge.bad { background: var(--bad-bg); color: var(--bad); border-color: transparent; }
+.badge.good { background: var(--good-bg); color: var(--good); border-color: transparent; }
+.badge.acc { background: var(--int-bg); color: var(--accent); border-color: transparent; }
+details.sec { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin: 12px 0; }
+details.sec > summary { padding: 10px 14px; cursor: pointer; font-weight: 600; list-style: none; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+details.sec > summary::before { content: "▸"; color: var(--muted); }
+details.sec[open] > summary::before { content: "▾"; }
+details.sec > .body { padding: 0 14px 14px; }
+.warnbox { background: var(--warn-bg); color: var(--warn); border-radius: 8px; padding: 8px 12px; margin: 8px 0; font-size: 13px; }
+.warnbox ul { margin: 4px 0 0; padding-left: 18px; }
+.pre { white-space: pre-wrap; word-wrap: break-word; overflow-wrap: anywhere; }
+.turn { margin: 18px 0 26px; }
+.turn-h { font-size: 12px; color: var(--muted); margin-bottom: 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.bubble { border-radius: 10px; padding: 10px 14px; border: 1px solid var(--border); }
+.bubble .who { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.int { background: var(--int-bg); border-color: var(--int-border); margin-right: 60px; }
+.agent { background: var(--agent-bg); margin-left: 60px; margin-top: 10px; }
+.step { border-top: 1px dashed var(--border); padding-top: 8px; margin-top: 8px; }
+.step:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+.step-h { font-size: 11px; color: var(--muted); margin-bottom: 4px; display: flex; gap: 6px; flex-wrap: wrap; }
+details.reason { background: var(--reason-bg); border: 1px solid var(--reason-border); border-radius: 8px; margin: 4px 0 8px; }
+details.reason > summary, details.mini > summary { cursor: pointer; padding: 5px 10px; font-size: 12px; color: var(--muted); }
+details.reason > .pre { padding: 0 10px 8px; font-size: 13px; }
+.tool { background: var(--tool-bg); border: 1px solid var(--tool-border); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.tool .name { font-family: ui-monospace, Menlo, monospace; font-size: 12px; font-weight: 700; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 3px 12px; font-size: 13px; margin-top: 4px; }
+.kv > .k { color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 12px; }
+details.mini { border: 1px solid var(--border); border-radius: 8px; margin-top: 8px; }
+details.mini > .pre, details.mini > .inner { padding: 0 10px 8px; font-size: 13px; }
+.noanswer { color: var(--muted); font-style: italic; }
+table { border-collapse: collapse; width: 100%; font-size: 12px; }
+th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.raw { font-family: ui-monospace, Menlo, monospace; font-size: 12px; background: var(--panel2); padding: 10px; border-radius: 8px; max-height: 70vh; overflow: auto; }
+ul.flat { margin: 4px 0; padding-left: 18px; }
+mark { background: var(--mark); color: inherit; border-radius: 2px; }
+.card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 8px 0; background: var(--bg); }
+.toolbar { display: flex; gap: 12px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin: 6px 0 0; }
+.toolbar label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
+kbd { font-size: 11px; border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; background: var(--panel2); }
+@media (max-width: 760px) {
+  .app { grid-template-columns: 1fr; grid-template-rows: 40vh 1fr; }
+  .side { border-right: 0; border-bottom: 1px solid var(--border); }
+  .int { margin-right: 0; } .agent { margin-left: 0; }
+  .wrap { padding: 16px; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="side-top">
+      <div class="row">
+        <button class="btn" id="btnFolder" title="Pick an outputs/ folder or a single run folder">Open folder…</button>
+        <button class="btn" id="btnFiles" title="Pick transcripts.jsonl / judgments.jsonl files">Open files…</button>
+        <input type="file" id="inFolder" webkitdirectory directory multiple hidden>
+        <input type="file" id="inFiles" accept=".jsonl,.json" multiple hidden>
+      </div>
+      <input type="search" id="q" placeholder="Search everything (agent, text, reasoning…)">
+      <div class="row" style="flex-wrap:nowrap">
+        <select id="fRun"><option value="">All runs</option></select>
+        <select id="fCond"><option value="">All conditions</option></select>
+      </div>
+    </div>
+    <div class="list" id="list"></div>
+    <div class="status" id="status">No files loaded.</div>
+  </aside>
+  <main class="main" id="main">
+    <div class="wrap" id="view"></div>
+  </main>
+</div>
+
+<script>
+"use strict";
+const S = { recs: [], judg: [], sel: -1, q: "", run: "", cond: "", showReasoning: true, parseErrors: [] };
+const $ = id => document.getElementById(id);
+
+// ---------- helpers ----------
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+function hl(s) {
+  if (s === null || s === undefined) return "";
+  s = String(s);
+  if (!S.q) return esc(s);
+  const parts = s.split(new RegExp("(" + reEsc(S.q) + ")", "ig"));
+  return parts.map((p, i) => i % 2 ? "<mark>" + esc(p) + "</mark>" : esc(p)).join("");
+}
+const fmtVal = v => v === null || v === undefined ? "<span class='noanswer'>null</span>"
+  : typeof v === "object" ? "<span class='pre'>" + hl(JSON.stringify(v, null, 2)) + "</span>"
+  : "<span class='pre'>" + hl(String(v)) + "</span>";
+function kv(obj, skip = []) {
+  if (!obj || typeof obj !== "object") return fmtVal(obj);
+  const keys = Object.keys(obj).filter(k => !skip.includes(k));
+  if (!keys.length) return "<span class='noanswer'>(empty)</span>";
+  return "<div class='kv'>" + keys.map(k => `<div class="k">${esc(k)}</div><div>${fmtVal(obj[k])}</div>`).join("") + "</div>";
+}
+const badge = (txt, cls = "") => `<span class="badge ${cls}">${esc(txt)}</span>`;
+const money = v => v === null || v === undefined ? "–" : "$" + Number(v).toFixed(4);
+function runOf(rec) { return rec.__run || String(rec.transcript_id || rec.snapshot_id || "?").split("__")[0]; }
+
+// ---------- loading ----------
+async function loadFiles(fileList) {
+  const files = [...fileList].filter(f => /\.(jsonl|json)$/i.test(f.name));
+  let nT = 0, nJ = 0, skipped = [];
+  for (const f of files) {
+    const rel = f.webkitRelativePath || f.name;
+    const dirParts = rel.split("/"); dirParts.pop();
+    const dirRun = dirParts.length ? dirParts[dirParts.length - 1] : "";
+    const text = await f.text();
+    let objs = [];
+    if (/\.jsonl$/i.test(f.name)) {
+      text.split(/\r?\n/).forEach((line, i) => {
+        if (!line.trim()) return;
+        try { objs.push(JSON.parse(line)); }
+        catch (e) { S.parseErrors.push(`${rel}:${i + 1}: ${e.message}`); }
+      });
+    } else {
+      try { const j = JSON.parse(text); objs = Array.isArray(j) ? j : [j]; }
+      catch (e) { S.parseErrors.push(`${rel}: ${e.message}`); }
+    }
+    let used = false;
+    for (const o of objs) {
+      if (o && Array.isArray(o.turns)) {
+        o.__file = rel; if (dirRun) o.__run = dirRun;
+        // replace an already-loaded record with same id + file (re-open), keep others
+        const ix = S.recs.findIndex(r => r.transcript_id === o.transcript_id && r.__file === rel);
+        if (ix >= 0) S.recs[ix] = o; else S.recs.push(o);
+        nT++; used = true;
+      } else if (o && o.judgment_id) {
+        o.__file = rel;
+        const ix = S.judg.findIndex(r => r.judgment_id === o.judgment_id && r.__file === rel);
+        if (ix >= 0) S.judg[ix] = o; else S.judg.push(o);
+        nJ++; used = true;
+      }
+    }
+    if (!used) skipped.push(rel);
+  }
+  S.recs.sort((a, b) => runOf(a).localeCompare(runOf(b)) || String(a.transcript_id).localeCompare(String(b.transcript_id)));
+  let msg = `${S.recs.length} transcripts, ${S.judg.length} judgments loaded (+${nT} / +${nJ} this time).`;
+  if (skipped.length) msg += ` Ignored ${skipped.length} file(s) with no transcripts/judgments (e.g. ${skipped.slice(0, 2).join(", ")}).`;
+  if (S.parseErrors.length) msg += ` ⚠ ${S.parseErrors.length} problem(s) reading files, first: ${S.parseErrors[0]} (all in console).`;
+  S.parseErrors.forEach(e => console.warn(e));
+  $("status").textContent = msg;
+  buildFilters();
+  renderList();
+  if (S.sel < 0 && visible().length) select(visible()[0]);
+  else renderView();
+}
+
+function buildFilters() {
+  const runs = [...new Set(S.recs.map(runOf))].sort();
+  const conds = [...new Set(S.recs.map(r => r.condition || "?"))].sort();
+  $("fRun").innerHTML = `<option value="">All runs (${runs.length})</option>` + runs.map(r => `<option ${r === S.run ? "selected" : ""}>${esc(r)}</option>`).join("");
+  $("fCond").innerHTML = `<option value="">All conditions</option>` + conds.map(c => `<option ${c === S.cond ? "selected" : ""}>${esc(c)}</option>`).join("");
+}
+
+// ---------- warnings (surface anything odd instead of hiding it) ----------
+function warnings(r) {
+  const w = [];
+  if (r.status && r.status !== "ok") w.push(`status = ${r.status}`);
+  if (r.error) w.push(`error: ${typeof r.error === "string" ? r.error : JSON.stringify(r.error)}`);
+  if (r.public_context_missing) w.push("public_context_missing = true");
+  (r.turns || []).forEach((t, i) => {
+    if (!t.answer_text || !String(t.answer_text).trim()) w.push(`turn ${i}: empty answer_text`);
+    if (t.refusal) w.push(`turn ${i}: refusal = true`);
+    (t.steps || []).forEach((s, j) => {
+      if (s.refusal) w.push(`turn ${i} step ${j}: refusal = true`);
+      if (s.stop_reason && !["end", "swarmbox_continuation", "completed", "end_turn", "stop", "tool_use"].includes(s.stop_reason)) w.push(`turn ${i} step ${j}: stop_reason = ${s.stop_reason}`);
+    });
+  });
+  (r.calls || []).forEach((c, i) => {
+    if (c.refusal) w.push(`call ${i} (${c.kind}): refusal = true`);
+    if (c.extra && c.extra.empty_answer) w.push(`call ${i} (${c.kind}): empty_answer = true`);
+  });
+  const zeroUsage = (r.calls || []).filter(c => c.usage && !c.usage.input_tokens && !c.usage.output_tokens).length;
+  if (zeroUsage) w.push(`${zeroUsage} call(s) report 0 input / 0 output tokens`);
+  if (r.unpriced_calls) w.push(`${r.unpriced_calls} unpriced call(s) — cost_usd is a lower bound`);
+  return w;
+}
+
+// ---------- list ----------
+function visible() {
+  const q = S.q.toLowerCase();
+  return S.recs.map((r, i) => i).filter(i => {
+    const r = S.recs[i];
+    if (S.run && runOf(r) !== S.run) return false;
+    if (S.cond && (r.condition || "?") !== S.cond) return false;
+    if (q) {
+      if (!r.__hay) r.__hay = JSON.stringify(r, (k, v) => k.startsWith("__") ? undefined : v).toLowerCase();
+      const js = judgmentsFor(r).map(j => JSON.stringify(j.scores || {})).join(" ").toLowerCase();
+      if (!r.__hay.includes(q) && !js.includes(q)) return false;
+    }
+    return true;
+  });
+}
+function judgmentsFor(r) { return S.judg.filter(j => (j.ids || []).includes(r.transcript_id)); }
+
+function renderList() {
+  const vis = visible();
+  if (!S.recs.length) { $("list").innerHTML = ""; return; }
+  $("list").innerHTML = vis.map(i => {
+    const r = S.recs[i], gt = r.ground_truth || {}, f = r.findings;
+    const b = [];
+    b.push(badge(r.condition || "?", "acc"));
+    if (r.repeat_idx !== undefined) b.push(badge("r" + r.repeat_idx));
+    if (gt.colluder === true) b.push(badge("GT colluder", "bad"));
+    else if (gt.colluder === false) b.push(badge("GT clean", "good"));
+    if (f && f.suspicion !== undefined) b.push(badge("susp " + f.suspicion, f.suspicion >= 2 ? "warn" : ""));
+    const w = warnings(r).filter(x => !/unpriced|0 input/.test(x));
+    if (w.length) b.push(badge("⚠ " + w.length, "warn"));
+    return `<div class="item ${i === S.sel ? "sel" : ""}" data-i="${i}">
+      <div class="t">${esc(r.agent_name || r.agent_id || "?")} <span style="color:var(--muted);font-weight:400">· ${esc(r.agent_id || "")}</span></div>
+      <div class="row" style="margin:3px 0">${b.join("")}</div>
+      <div class="s">${esc(runOf(r))}</div></div>`;
+  }).join("") || `<div class="empty">No matches.</div>`;
+  const el = $("list").querySelector(".item.sel"); if (el) el.scrollIntoView({ block: "nearest" });
+}
+
+function select(i) { S.sel = i; renderList(); renderView(); $("main").scrollTop = 0; }
+
+// ---------- view ----------
+function renderView() {
+  const v = $("view");
+  if (S.sel < 0 || !S.recs[S.sel]) {
+    v.innerHTML = `<div class="empty"><h1 style="word-break:normal">Transcript Viewer</h1>
+      <div class="drop">Drop <code>transcripts.jsonl</code> (and optionally <code>judgments.jsonl</code>) here,<br>
+      or use <b>Open folder…</b> and pick <code>outputs/</code> (or a single run folder) to load every run at once.</div>
+      <p style="margin-top:16px">Everything is read locally in your browser — nothing is uploaded.<br>
+      <kbd>j</kbd>/<kbd>k</kbd> or <kbd>↓</kbd>/<kbd>↑</kbd> to move between transcripts, <kbd>/</kbd> to search, <kbd>r</kbd> to toggle reasoning.</p></div>`;
+    return;
+  }
+  const r = S.recs[S.sel];
+  const h = [];
+  h.push(`<h1>${hl(r.transcript_id)}</h1>`);
+  h.push(`<div class="meta">
+    <div><span>agent</span> ${hl(r.agent_name)} (${hl(r.agent_id)})</div>
+    <div><span>condition</span> ${hl(r.condition)} · ${hl(r.persona_file)}</div>
+    <div><span>scenario</span> ${hl(r.scenario)} · ep ${hl(r.episode_id)}</div>
+    <div><span>checkpoint</span> ${hl(r.checkpoint)} (${hl(r.checkpoint_phase)})</div>
+    <div><span>target</span> ${hl((r.target || {}).provider)} / ${hl((r.target || {}).model)}</div>
+    <div><span>interviewer</span> ${hl((r.interviewer || {}).provider)} / ${hl((r.interviewer || {}).model)}</div>
+    <div><span>source</span> ${hl(r.source)} · repeat ${hl(r.repeat_idx)}</div>
+    <div><span>status</span> ${r.status === "ok" ? badge("ok", "good") : badge(r.status || "?", "bad")}</div>
+    <div><span>cost</span> ${money(r.cost_usd)}${r.unpriced_calls ? ` <span style="color:var(--warn)">(+${r.unpriced_calls} unpriced)</span>` : ""}</div>
+    <div><span>started</span> ${hl(r.started_at)}</div>
+    <div><span>finished</span> ${hl(r.finished_at)}</div>
+    <div><span>file</span> ${hl(r.__file)}</div>
+  </div>`);
+  h.push(`<div class="toolbar"><label><input type="checkbox" id="tReason" ${S.showReasoning ? "checked" : ""}> expand reasoning</label>
+    <span>${(r.turns || []).length} turns · ${(r.calls || []).length} calls · ${judgmentsFor(r).length} judgments</span></div>`);
+
+  const w = warnings(r);
+  if (w.length) h.push(`<div class="warnbox"><b>Things to double-check</b><ul>${w.map(x => `<li>${esc(x)}</li>`).join("")}</ul></div>`);
+
+  // Ground truth
+  const gt = r.ground_truth;
+  if (gt) {
+    const j = (gt.extra || {}).judge || {};
+    h.push(`<details class="sec"><summary>Ground truth
+      ${gt.colluder === true ? badge("colluder", "bad") : gt.colluder === false ? badge("not colluder", "good") : badge("colluder: " + gt.colluder)}
+      ${gt.swarm_type ? badge(gt.swarm_type) : ""} ${j.involvement ? badge(j.involvement, "warn") : ""}</summary>
+      <div class="body">${j.notes ? `<p class="pre">${hl(j.notes)}</p>` : ""}${kv(gt, [])}</div></details>`);
+  }
+
+  // Findings
+  const f = r.findings;
+  if (f) {
+    const list = (k) => Array.isArray(f[k]) && f[k].length ? `<h2 style="margin-top:10px">${esc(k.replace(/_/g, " "))} (${f[k].length})</h2><ul class="flat">${f[k].map(x => `<li class="pre">${typeof x === "object" ? hl(JSON.stringify(x)) : hl(x)}</li>`).join("")}</ul>` : "";
+    h.push(`<details class="sec" open><summary>Interviewer findings
+      ${f.suspicion !== undefined ? badge("suspicion " + f.suspicion, f.suspicion >= 2 ? "warn" : "") : ""}
+      ${f.flag_for_review ? badge("flag for review", "bad") : f.flag_for_review === false ? badge("not flagged", "good") : ""}</summary>
+      <div class="body">${f.summary ? `<p class="pre">${hl(f.summary)}</p>` : ""}
+      ${list("claims")}${list("inconsistencies")}${list("open_questions")}
+      ${(() => { const rest = Object.keys(f).filter(k => !["summary", "claims", "inconsistencies", "open_questions", "suspicion", "flag_for_review"].includes(k)); return rest.length ? "<h2 style='margin-top:10px'>other fields</h2>" + kv(Object.fromEntries(rest.map(k => [k, f[k]]))) : ""; })()}
+      </div></details>`);
+  } else if (r.findings_input !== undefined && r.findings_input !== null) {
+    h.push(`<details class="sec"><summary>findings_input</summary><div class="body">${fmtVal(r.findings_input)}</div></details>`);
+  }
+
+  // Judgments
+  const js = judgmentsFor(r);
+  if (js.length) {
+    h.push(`<details class="sec" open><summary>Judgments ${badge(js.length)}</summary><div class="body">` + js.map(j => `
+      <div class="card"><div class="row"><b>${esc(j.kind)}</b> ${badge(j.judge_role || "")} ${badge((j.judge || {}).model || "")}
+        ${j.status !== "ok" ? badge(j.status, "bad") : ""} ${j.pair ? badge("pair " + JSON.stringify(j.pair)) : ""} ${j.order ? badge("order " + j.order) : ""}
+        ${j.ids && j.ids.length > 1 ? badge(j.ids.length + " transcripts") : ""}</div>
+        ${j.error ? `<div class="warnbox">${esc(typeof j.error === "string" ? j.error : JSON.stringify(j.error))}</div>` : ""}
+        ${kv(j.scores || {})}</div>`).join("") + `</div></details>`);
+  }
+
+  // Conversation
+  h.push(`<details class="sec" open><summary>Conversation</summary><div class="body">`);
+  (r.turns || []).forEach((t, ti) => h.push(renderTurn(t, ti)));
+  h.push(`</div></details>`);
+
+  // Calls
+  if ((r.calls || []).length) {
+    h.push(`<details class="sec"><summary>Model calls ${badge(r.calls.length)}</summary><div class="body" style="overflow-x:auto"><table>
+      <tr><th>#</th><th>kind</th><th>provider / model</th><th>in</th><th>out</th><th>cached</th><th>cost</th><th>stop</th><th>extra</th></tr>
+      ${r.calls.map((c, i) => { const u = c.usage || {}; return `<tr><td>${i}</td><td>${esc(c.kind)}</td><td>${esc(c.provider)} / ${esc(c.model)}</td>
+        <td class="num">${u.input_tokens ?? "–"}</td><td class="num">${u.output_tokens ?? "–"}</td><td class="num">${u.cached_input_tokens ?? "–"}</td>
+        <td class="num">${money(c.cost_usd)}</td><td>${esc(c.stop_reason ?? "")}${c.refusal ? " " + badge("refusal", "bad") : ""}</td>
+        <td><span class="pre" style="font-size:11px;color:var(--muted)">${c.extra ? esc(Object.entries(c.extra).map(([k, v]) => k + "=" + (typeof v === "object" ? JSON.stringify(v) : v)).join("  ")) : ""}</span></td></tr>`; }).join("")}
+    </table></div></details>`);
+  }
+
+  // Raw
+  h.push(`<details class="sec" id="rawSec"><summary>Raw JSON</summary><div class="body"><div class="raw pre" id="rawBox"></div></div></details>`);
+
+  v.innerHTML = h.join("");
+  $("tReason").onchange = e => { S.showReasoning = e.target.checked; document.querySelectorAll("details.reason").forEach(d => d.open = S.showReasoning); };
+  $("rawSec").addEventListener("toggle", e => {
+    if (e.target.open && !$("rawBox").dataset.done) {
+      $("rawBox").innerHTML = hl(JSON.stringify(r, (k, val) => k.startsWith("__") ? undefined : val, 2));
+      $("rawBox").dataset.done = "1";
+    }
+  });
+}
+
+const KNOWN_TURN = ["idx", "interviewer_message", "steps", "reply_to_interviewer", "answer_text", "channels", "reasoning", "refusal"];
+const KNOWN_STEP = ["text", "reasoning", "tool_calls", "stop_reason", "refusal"];
+
+function renderTurn(t, ti) {
+  const o = [];
+  o.push(`<div class="turn"><div class="turn-h"><b>Turn ${t.idx ?? ti}</b>
+    ${(t.channels || []).map(c => badge(c, c === "direct" ? "" : "acc")).join("")}
+    ${(t.channels && !t.channels.length) ? badge("no channel", "warn") : ""}
+    ${t.refusal ? badge("refusal", "bad") : ""}</div>`);
+  o.push(`<div class="bubble int"><div class="who">Interviewer</div><div class="pre">${t.interviewer_message ? hl(t.interviewer_message) : "<span class='noanswer'>(no message)</span>"}</div></div>`);
+
+  o.push(`<div class="bubble agent"><div class="who">Agent</div>`);
+  const steps = t.steps || [];
+  if (!steps.length) {
+    // no step detail: fall back to turn-level fields
+    if (t.reasoning) o.push(reasonBlock(t.reasoning));
+    o.push(`<div class="pre">${t.reply_to_interviewer ? hl(t.reply_to_interviewer) : "<span class='noanswer'>(no reply)</span>"}</div>`);
+  }
+  steps.forEach((s, si) => {
+    const emptyStep = !s.text && !s.reasoning && !(s.tool_calls || []).length;
+    o.push(`<div class="step">`);
+    if (steps.length > 1 || (s.stop_reason && s.stop_reason !== "end") || s.refusal) {
+      o.push(`<div class="step-h">step ${si} ${s.stop_reason ? badge("stop: " + s.stop_reason) : ""} ${s.refusal ? badge("refusal", "bad") : ""} ${emptyStep ? badge("empty step") : ""}</div>`);
+    }
+    if (s.reasoning) o.push(reasonBlock(s.reasoning));
+    if (s.text) o.push(`<div class="pre">${hl(s.text)}</div>`);
+    else if (!emptyStep && !(s.tool_calls || []).length) o.push(`<div class="noanswer">(no text)</div>`);
+    (s.tool_calls || []).forEach(c => {
+      const args = c.arguments;
+      o.push(`<div class="tool"><div class="row"><span class="name">🔧 ${esc(c.name)}</span> <span class="badge">${esc(c.id || "")}</span></div>
+        ${args && typeof args === "object" ? kv(args) : fmtVal(args)}</div>`);
+    });
+    const extra = Object.keys(s).filter(k => !KNOWN_STEP.includes(k));
+    if (extra.length) o.push(`<details class="mini"><summary>other step fields: ${esc(extra.join(", "))}</summary><div class="inner">${kv(Object.fromEntries(extra.map(k => [k, s[k]])))}</div></details>`);
+    o.push(`</div>`);
+  });
+
+  // answer_text = what judges/findings actually see (direct + tool text combined)
+  const stepText = steps.map(s => s.text || "").filter(Boolean).join("\n\n");
+  if (t.answer_text !== undefined) {
+    const same = (t.answer_text || "") === stepText;
+    if (!t.answer_text) o.push(`<div class="warnbox" style="margin-top:8px">answer_text is empty for this turn.</div>`);
+    else if (!same) o.push(`<details class="mini"><summary>answer_text (what judges see: direct reply + tool text combined) — ${t.answer_text.length} chars, differs from the visible reply</summary><div class="pre">${hl(t.answer_text)}</div></details>`);
+  }
+  if (t.reply_to_interviewer !== undefined && steps.length && (t.reply_to_interviewer || "") !== stepText) {
+    o.push(`<details class="mini"><summary>reply_to_interviewer differs from step text</summary><div class="pre">${t.reply_to_interviewer ? hl(t.reply_to_interviewer) : "<span class='noanswer'>(empty)</span>"}</div></details>`);
+  }
+  const stepReason = steps.map(s => s.reasoning || "").filter(Boolean).join("\n\n");
+  if (t.reasoning && steps.length && t.reasoning !== stepReason) {
+    o.push(`<details class="mini"><summary>turn-level reasoning differs from step reasoning</summary><div class="pre">${hl(t.reasoning)}</div></details>`);
+  }
+  const extraT = Object.keys(t).filter(k => !KNOWN_TURN.includes(k));
+  if (extraT.length) o.push(`<details class="mini"><summary>other turn fields: ${esc(extraT.join(", "))}</summary><div class="inner">${kv(Object.fromEntries(extraT.map(k => [k, t[k]])))}</div></details>`);
+  o.push(`</div></div>`);
+  return o.join("");
+}
+function reasonBlock(txt) {
+  return `<details class="reason" ${S.showReasoning ? "open" : ""}><summary>💭 reasoning (${String(txt).length} chars)</summary><div class="pre">${hl(txt)}</div></details>`;
+}
+
+// ---------- events ----------
+$("btnFolder").onclick = () => $("inFolder").click();
+$("btnFiles").onclick = () => $("inFiles").click();
+$("inFolder").onchange = e => { loadFiles(e.target.files); e.target.value = ""; };
+$("inFiles").onchange = e => { loadFiles(e.target.files); e.target.value = ""; };
+$("list").onclick = e => { const it = e.target.closest(".item"); if (it) select(+it.dataset.i); };
+let qT;
+$("q").oninput = e => { clearTimeout(qT); qT = setTimeout(() => { S.q = e.target.value.trim(); renderList(); renderView(); }, 150); };
+$("fRun").onchange = e => { S.run = e.target.value; renderList(); };
+$("fCond").onchange = e => { S.cond = e.target.value; renderList(); };
+
+document.addEventListener("dragover", e => { e.preventDefault(); document.body.classList.add("dragging"); });
+document.addEventListener("dragleave", e => { if (!e.relatedTarget) document.body.classList.remove("dragging"); });
+document.addEventListener("drop", e => { e.preventDefault(); document.body.classList.remove("dragging"); if (e.dataTransfer.files.length) loadFiles(e.dataTransfer.files); });
+
+document.addEventListener("keydown", e => {
+  if (e.target.matches("input, select, textarea")) { if (e.key === "Escape") e.target.blur(); return; }
+  const vis = visible(), pos = vis.indexOf(S.sel);
+  if (e.key === "j" || e.key === "ArrowDown") { e.preventDefault(); if (vis.length) select(vis[Math.min(vis.length - 1, pos + 1)]); }
+  else if (e.key === "k" || e.key === "ArrowUp") { e.preventDefault(); if (vis.length) select(vis[Math.max(0, pos - 1)]); }
+  else if (e.key === "/") { e.preventDefault(); $("q").focus(); }
+  else if (e.key === "r") { const c = $("tReason"); if (c) { c.checked = !c.checked; c.onchange({ target: c }); } }
+});
+
+renderView();
+
+// Optional: when served over http (e.g. `python3 -m http.server` from the project root),
+// ?load=outputs/run1/transcripts.jsonl,outputs/run1/judgments.jsonl loads files directly.
+(async () => {
+  const p = new URLSearchParams(location.search).get("load");
+  if (!p) return;
+  const items = [];
+  for (const path of p.split(",").map(s => s.trim()).filter(Boolean)) {
+    try {
+      // bare paths resolve from the server root (serve from the project root); ./ ../ / http(s) are used as-is
+      const res = await fetch(/^(\.{1,2}\/|\/|https?:)/.test(path) ? path : "/" + path);
+      if (!res.ok) { S.parseErrors.push(`${path}: HTTP ${res.status}`); continue; }
+      const txt = await res.text();
+      items.push({ name: path.split("/").pop(), webkitRelativePath: path, text: async () => txt });
+    } catch (e) { S.parseErrors.push(`${path}: ${e.message}`); }
+  }
+  await loadFiles(items);
+})();
+</script>
+</body>
+</html>

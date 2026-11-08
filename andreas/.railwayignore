@@ -1,0 +1,12 @@
+# Files `railway up` must never upload (this folder is not a git repo, so .gitignore may not apply).
+.env
+.env.*
+!.env.example
+.venv/
+outputs/
+data/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+*.egg-info/
+.git/
