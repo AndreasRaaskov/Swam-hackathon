@@ -37,6 +37,12 @@ The `batch1/` scripts read the same values as `CFID` and `CFSEC`. Run Python wit
 `compile_batch1.py` joins the first 100 interviews (B-glm and A-glm), and `batch1/` holds the
 scripts that ran them. `plans/` holds the plans for the later batches.
 
+## Findings and open work
+
+- [`NOTES.md`](NOTES.md): what the interviews show, corrections to earlier claims, API gotchas.
+- [`FUTURE_WORK.md`](FUTURE_WORK.md): decisions and the prioritized backlog.
+- [`swarmbox_eval_2026-11-08.md`](swarmbox_eval_2026-11-08.md): snapshot evaluation of the sandbox.
+
 ## Notes
 
 - Interviews use tools "declared": attempted tool calls (mostly owner reports) count as answers.
