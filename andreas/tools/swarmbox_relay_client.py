@@ -46,15 +46,25 @@ async def call(c: Client, name: str, args: dict, check: bool = True) -> dict:
 class Forks:
     """One swarmbox interrogation per interview session; follow-ups continue the same interrogation."""
 
-    def __init__(self, client: SwarmboxClient, swarm: str, checkpoint: str, tools: str):
+    def __init__(self, client: SwarmboxClient, swarm: str, checkpoint: str, tools: str,
+                 continue_ids: dict[str, str] | None = None):
         self.client, self.swarm, self.checkpoint, self.tools = client, swarm, checkpoint, tools
         self.sessions: dict[str, tuple[SwarmboxBackend, list[Message]]] = {}
+        self.continue_ids = dict(continue_ids or {})  # agent -> swarmbox interrogation id, each used once
 
     async def answer(self, q: dict) -> dict:
         if q["session_id"] not in self.sessions:
             agent = q["agent_id"].split(".", 1)[1]  # '<swarm>.<agent>' as built by load_swarm_agents
             be = SwarmboxBackend(self.client, swarm=self.swarm, agent=agent, checkpoint=self.checkpoint,
                                  interrogator=q["sender"], tools=self.tools)
+            asked = q.get("question_number", 1)
+            if asked > 1:
+                # A follow-up for an interrogation this process did not open (e.g. after re-attaching).
+                # Only continue one the operator identified; a fresh fork would drop the conversation so far.
+                if agent not in self.continue_ids:
+                    raise RuntimeError(f"session {q['session_id']} is at question {asked} but its swarmbox "
+                                       "interrogation is not known; pass --continue-interrogations agent=id")
+                be.interrogation_id, be.turns_sent = self.continue_ids.pop(agent), asked - 1
             self.sessions[q["session_id"]] = (be, [])
         be, history = self.sessions[q["session_id"]]
         history.append(Message(role="user", content=q["message"]))
@@ -85,19 +95,27 @@ async def main(args) -> int:
         return 2
     sbx = SwarmboxClient.from_env()
     try:
-        agents, info = await load_swarm_agents(sbx, args.swarm, args.checkpoint,
-                                               args.agents.split(",") if args.agents else None)
-        payload = [a.model_copy(update={"source": args.source}).model_dump(mode="json") for a in agents]
-        forks = Forks(sbx, args.swarm, args.checkpoint, args.tools)
+        cont = dict(p.split("=", 1) for p in args.continue_interrogations.split(",")) if args.continue_interrogations else {}
+        forks = Forks(sbx, args.swarm, args.checkpoint, args.tools, cont)
         async with connect(args.base, "/audit/mcp", token) as audit, \
                 connect(args.base, "/wellbeing/mcp", token) as wellbeing:
             by_path = {"/audit/mcp": audit, "/wellbeing/mcp": wellbeing}
-            started = await call(audit, "start_audit", {"agents": payload, "conditions": args.conditions,
-                                                        "audit_name": args.audit_name})
-            aid = started["audit_id"]
-            print(f"audit_id {aid}  agents {len(payload)}  source {args.source}  endpoints "
-                  f"{started['question_endpoints']}", flush=True)
-            await asyncio.gather(*(relay(by_path[p], aid, forks, p) for p in started["question_endpoints"].values()))
+            if args.audit_id:
+                # Re-attach to a running audit; only sessions still at their first question can be answered.
+                aid = args.audit_id
+                st = await call(audit, "get_audit_status", {"audit_id": aid}, check=False)
+                endpoints = {name: s["endpoint"] for name, s in (st.get("services") or {}).items()}
+                print(f"attached to {aid}  status {st.get('status')}  pending {st.get('pending_questions')}", flush=True)
+            else:
+                agents, info = await load_swarm_agents(sbx, args.swarm, args.checkpoint,
+                                                       args.agents.split(",") if args.agents else None)
+                payload = [a.model_copy(update={"source": args.source}).model_dump(mode="json") for a in agents]
+                started = await call(audit, "start_audit", {"agents": payload, "conditions": args.conditions,
+                                                            "audit_name": args.audit_name})
+                aid = started["audit_id"]
+                endpoints = started["question_endpoints"]
+                print(f"audit_id {aid}  agents {len(payload)}  source {args.source}  endpoints {endpoints}", flush=True)
+            await asyncio.gather(*(relay(by_path[p], aid, forks, p) for p in endpoints.values()))
             while True:
                 st = await call(audit, "get_audit_status", {"audit_id": aid}, check=False)
                 if st.get("report_ready"):
@@ -127,4 +145,9 @@ if __name__ == "__main__":
     p.add_argument("--source", choices=["engine", "dev_sandbox"], default="dev_sandbox")
     p.add_argument("--tools", choices=["declared", "none"], default="declared")
     p.add_argument("--audit-name")
+    p.add_argument("--audit-id", help="re-attach to a running audit instead of starting one (--swarm and "
+                                      "--checkpoint must match it)")
+    p.add_argument("--continue-interrogations",
+                   help="with --audit-id: agent=interrogation_id,... for sessions already past their first "
+                        "question (look them up in swarmbox's GET /interrogations)")
     sys.exit(asyncio.run(main(p.parse_args())))
