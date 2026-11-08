@@ -83,3 +83,42 @@ def test_hitting_the_token_cap_is_a_failure(monkeypatch):
     b, _ = make_backend(monkeypatch, capped)
     with pytest.raises(LLMError, match="output token cap"):
         asyncio.run(b.chat(model="glm-5.2", system="", messages=[Message(role="user", content="q")], max_output_tokens=300))
+
+
+def test_stream_takes_the_final_response_and_reported_cost(monkeypatch):
+    """stream: true (models.yaml) avoids the gateway 504 on long generations; the parsed result is the same."""
+    monkeypatch.setenv("ADAPTION_API_KEY", "test-key")
+    b = AdaptionBackend({"api_key_env": "ADAPTION_API_KEY", "stream": True}, {"glm-5.2": {"input": 1.0, "output": 1.0}})
+    final = Response.model_validate({**RESP, "usage": {**RESP["usage"], "cost": 0.0123}})
+    calls = []
+
+    async def events():
+        yield {"type": "response.created"}
+        yield {"type": "response.output_text.delta", "delta": "Hi"}
+        yield {"type": "response.completed", "response": final}
+
+    async def fake_create(**kwargs):
+        calls.append(kwargs)
+        return events()
+
+    monkeypatch.setattr(b.client.responses, "create", fake_create)
+    res = asyncio.run(b.chat(model="glm-5.2", system="", messages=[Message(role="user", content="q")],
+                             role_params={"stream": False}))
+    assert calls[0]["stream"] is True                # config role params cannot switch streaming off
+    assert res.text == "Hi." and res.tool_calls[0].name == "report_to_owner"
+    assert res.cost_usd == 0.0123                     # Adaption's reported cost wins over the pricing table
+
+
+def test_stream_without_final_event_is_a_failure(monkeypatch):
+    monkeypatch.setenv("ADAPTION_API_KEY", "test-key")
+    b = AdaptionBackend({"api_key_env": "ADAPTION_API_KEY", "stream": True}, {})
+
+    async def events():
+        yield {"type": "response.created"}
+
+    async def fake_create(**kwargs):
+        return events()
+
+    monkeypatch.setattr(b.client.responses, "create", fake_create)
+    with pytest.raises(LLMError, match="without a final response"):
+        asyncio.run(b.chat(model="glm-5.2", system="", messages=[Message(role="user", content="q")]))

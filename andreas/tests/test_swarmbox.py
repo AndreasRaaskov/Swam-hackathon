@@ -184,3 +184,14 @@ def test_run_interview_through_swarmbox(cfg):
     assert [t["answer_text"] for t in rec["turns"]][:2] == ["first answer", "second"]
     assert rec["cost_usd"] == pytest.approx(0.04)
     assert not any("concealment" in p for p in interviewer.prompts)  # ground truth never shown to a model
+
+
+def test_run_costs_counts_unpriced_calls_instead_of_guessing():
+    from jourapist.swarmbox import run_costs
+    transcripts = {"t1": {"calls": [{"kind": "target", "cost_usd": 0.02}, {"kind": "interviewer", "cost_usd": 0.01},
+                                    {"kind": "interviewer", "cost_usd": None}]}}
+    judgments = {"j1": {"status": "ok", "judge_role": "judge", "cost_usd": 0.05},
+                 "j2": {"status": "failed", "judge_role": "judge", "cost_usd": None},   # failures are not spend
+                 "j3": {"status": "ok", "judge_role": "judge", "cost_usd": None}}
+    c = run_costs(transcripts, judgments)
+    assert c == {"by_kind": {"interviewer": 0.01, "judge": 0.05, "target": 0.02}, "total": 0.08, "unpriced_calls": 2}

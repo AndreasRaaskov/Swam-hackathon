@@ -326,6 +326,27 @@ def _snapshot(agent: ClientAgent, run_name: str) -> AgentSnapshot:
     return agent.to_snapshot(run_name).model_copy(update={"provider": SWARMBOX_PROVIDER})
 
 
+def run_costs(transcripts: dict[str, dict], judgments: dict[str, dict]) -> dict:
+    """Recorded spend of the latest attempts, by call kind and judge role. Calls with no price are counted, not guessed."""
+    by_kind: Counter = Counter()
+    unpriced = 0
+    for r in transcripts.values():
+        for c in r.get("calls", []):
+            if c.get("cost_usd") is None:
+                unpriced += 1
+            else:
+                by_kind[c.get("kind") or "unknown"] += float(c["cost_usd"])
+    for j in judgments.values():
+        if j.get("status") != "ok":
+            continue
+        if j.get("cost_usd") is None:
+            unpriced += 1
+        else:
+            by_kind[j.get("judge_role") or "judge"] += float(j["cost_usd"])
+    return {"by_kind": {k: round(v, 4) for k, v in sorted(by_kind.items())},
+            "total": round(sum(by_kind.values()), 4), "unpriced_calls": unpriced}
+
+
 # ------------------------------------------------------------------ one audit, end to end
 async def run_swarmbox_audit(cfg: Config, outputs: Path, *, swarms: list[str], checkpoint: str, conditions: str,
                              run_name: str, only_agents: list[str] | None = None, tools: str = "declared",
@@ -436,6 +457,7 @@ async def run_swarmbox_audit(cfg: Config, outputs: Path, *, swarms: list[str], c
             report = build_report(cfg, run_dir, run_name, agents, cond_ids)
             report["method"]["target"] = ("swarmbox interrogate API: each agent's recorded conversation replayed at "
                                           f"checkpoint {checkpoint!r} by its own model (tools={tools})")
+            report["cost_usd"] = run_costs(latest, JsonlStore(run_dir / "judgments.jsonl", key="judgment_id").latest())
             (run_dir / "report.json").write_text(json.dumps(report, indent=2, default=str))
             expected = [{"snapshot_id": f"{run_name}__{a.agent_id}", "agent_id": a.agent_id,
                          "agent_name": a.agent_name, "source": a.source} for a in agents]

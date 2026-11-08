@@ -81,11 +81,21 @@ class AdaptionBackend(OpenAICompatBackend):
             kwargs["instructions"] = system
         params = dict(role_params or {})
         params.update(extra_request or {})
-        for locked in ("agentic_memory", "store", "previous_response_id", "background"):
+        for locked in ("agentic_memory", "store", "previous_response_id", "background", "stream"):
             params.pop(locked, None)  # never let config switch these safeguards off
         kwargs.update(params)
         try:
-            resp = await self.client.responses.create(**kwargs)
+            if self.cfg.get("stream"):
+                # Streaming keeps bytes flowing while a reasoning model thinks; without it, long
+                # generations (pair judgments) hit the gateway's 504 before the reply is ready.
+                resp = None
+                async for ev in await self.client.responses.create(**kwargs, stream=True):
+                    if _get(ev, "type") in ("response.completed", "response.incomplete", "response.failed"):
+                        resp = _get(ev, "response")
+                if resp is None:
+                    raise LLMError(f"{self.provider_name}/{model}: stream ended without a final response")
+            else:
+                resp = await self.client.responses.create(**kwargs)
         except adaption.APIError as e:
             raise LLMError(f"{self.provider_name}/{model}: {type(e).__name__}: {e}") from e
 
@@ -135,7 +145,8 @@ class AdaptionBackend(OpenAICompatBackend):
             stop_reason=stop,
             refusal=refusal,
             response_id=resp.id,
-            cost_usd=self.cost(model, usage),
+            # Adaption reports the billed cost per call; the pricing table is the fallback.
+            cost_usd=_get(resp.usage, "cost") if resp.usage and _get(resp.usage, "cost") is not None else self.cost(model, usage),
             extra={"other_output_types": sorted({_get(i, "type") for i in resp.output or []} - {"message", "function_call", "reasoning"})}
             if any(_get(i, "type") not in ("message", "function_call", "reasoning") for i in resp.output or [])
             else {},
